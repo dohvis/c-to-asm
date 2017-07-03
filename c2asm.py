@@ -1,26 +1,16 @@
 from copy import copy
-
-DOUBLE_QUOTE = '"'  # string identifier
-TYPES = ("void", "string")
-VALID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrustuvwxyz_"
-VALID_NUMBERS = "0123456789."
-WHITESPACE = (" ", "\t", "\n")
-SYMBOLS = ("(", ")", "{", "}", ",", ";")
-TOKEN_TYPES = {"EOF": 0, "IDENTIFIER": 1, "NUMBER": 2, "STRING": 3, "SYMBOL": 4, "VOID": 5}
-NULL = "\0"
-STATE_TYPES = {"CALL_FUNC": 0, "DECLARE_FUNC": 1, "INLINE_ASSEMBLY": 2}
-
-_SYMBOL_TABLES = [
-    {"type": "string", "isFunc": False, "identifier": "string1", "value": '"hello world"'},
-    {"type": "void", "isFunc": True, "identifier": "main",
-     "node": None,
-     },
-    {"type": "void", "isFunc": True, "identifier": "printf",
-     "value": "mov eax, 4\bmov ebx,1\nmov ecx, [ebp+8]\nmov edx,size\nint 0x80"}
-]
-PRINTF_CODE = "mov eax, 4\nmov ebx,1\nmov ecx, [ebp+8]\nmov edx, %s_size\nint 0x80"
-SYMBOL_TABLES = []
-ORIGINAL_ENTRY_POINT = "_start"
+from symbols import (
+    DOUBLE_QUOTE,
+    TYPES,
+    VALID_CHARS,
+    VALID_NUMBERS,
+    WHITESPACE,
+    SYMBOLS,
+    TOKEN_TYPES,
+    STATE_TYPES,
+    ORIGINAL_ENTRY_POINT,
+    PRINTF_CODE,
+)
 
 
 class Node:
@@ -31,41 +21,29 @@ class Node:
         self.children = []
         self.depth = 0
 
-    def add_node(self, value):
-        child = Node(value)
-        child.depth = self.depth + 1
-        child.parent = self
-        self.children.append(child)
-
-    def get_root(self):
-        node = self
-        while node.depth != 0:
-            print(node)
-            node = node.parent
-            break
+    def append_child(self, node):
+        node.parent = self
+        node.depth = self.depth + 1
+        self.children.append(node)
 
     def __repr__(self):
-        return 'value: %s, parent: %s depth:  %s, children: %s' % (self.value, self.parent, self.depth, self.children)
-
-    def __str__(self):
-        return self.__repr__()
+        return '<state: %s, value: %s, depth: %d>' % (self.state, self.value, self.depth)
 
 
 class Lexer:
     """
-            Here are the tokens returned by the lexer:
-            0 Type: void
-            4 Identifier: main
-            5 Symbol (
-            6 Symbol )
-            5 Symbol: {
-            6 Identifier: printf
-            0 Symbol (
-            0 String "Hello world"
-            6 Symbol )
-            6 Symbol ;
-            7 Symbol }
-            """
+    Type: void
+    Identifier: main
+    Symbol (
+    Symbol )
+    Symbol: {
+    Identifier: printf
+    Symbol (
+    String "Hello world"
+    Symbol )
+    Symbol ;
+    Symbol }
+    """
 
     def __init__(self, file_path):
         with open(file_path, 'r') as fp:
@@ -141,6 +119,7 @@ class Lexer:
             self.token["type"] = TOKEN_TYPES["SYMBOL"]
             self._get_next_char()
         else:
+            # TODO: Add other token types
             raise NotImplementedError
 
         return self.token
@@ -148,37 +127,28 @@ class Lexer:
 
 class Parser:
     """
-    :declare_func
-    my_printf
-        args: [
-                string:
-                printed_string
-            ]
-            :call_func
-            write
-                syscall4(1, &string, size)
-    :declare_func
     main
-        :call_func # state
-        my_printf
+        printf
             "hello world"
     """
 
     def __init__(self, file_path):
         self.lexer = Lexer(file_path)
+        self.symbol_table = []
 
-    def expression(self):
-        pass
-
-    def find(self, char):
-        while self.lexer.token["value"] != char:
-            self.lexer.get_token()
+    def consume(self, char):
+        token = self.lexer.get_token()
+        first_pass = True
+        while token["value"] != char:
+            token = self.lexer.get_token()
+            first_pass = False
+        return token if not first_pass else self.lexer.get_token()
 
     def _declare_func(self):
         return_type = copy(self.lexer.token)["value"]
         func_name = copy(self.lexer.get_token())["value"]
         symbol = {"type": return_type, "isFunc": True, "identifier": func_name}
-        token = self.lexer.get_token()  # consume('(')
+        token = self.consume('(')
 
         args = []
         while token["value"] != "{":
@@ -193,34 +163,33 @@ class Parser:
             token = self.lexer.get_token()
         symbol["args"] = args
         node = Node()
-        self.find('{')
-        token = self.lexer.get_token()
         while token["value"] != "}":
             _node = self.state_handler(token, node)
             if _node is not None:
-                node.children.append(_node)
+                node.append_child(_node)
             token = self.lexer.get_token()
         symbol["node"] = node
-        SYMBOL_TABLES.append(symbol)
+        self.symbol_table.append(symbol)
 
     def _call_function(self):
         args = []
         function_name = self.lexer.token["value"]
-        if function_name == "printf":
-            printf_code = PRINTF_CODE % "string1"
-            node = Node(state=STATE_TYPES["INLINE_ASSEMBLY"], value={"code": printf_code})
-            symbol = {"type": "void", "isFunc": True, "identifier": "printf",
-                      "value": PRINTF_CODE, "node": node}
-            SYMBOL_TABLES.append(symbol)
-        self.find('(')
-        token = self.lexer.get_token()
+
+        token = self.consume('(')
         while token["value"] != ")":
             # parse function's arguments
             if token["type"] == TOKEN_TYPES["STRING"]:
                 args.append(token["value"])
             else:
+                # TODO: Check the type of arguments
                 raise NotImplementedError
             token = self.lexer.get_token()
+
+        if function_name == "printf":
+            strlen = len(args[0])
+            node = Node(state=STATE_TYPES["INLINE_ASSEMBLY"], value={"code": PRINTF_CODE % strlen})
+            symbol = {"type": "void", "isFunc": True, "identifier": "printf", "node": node}
+            self.symbol_table.append(symbol)
         value = {"func_name": function_name, "args": args}
         node = Node(state=STATE_TYPES["CALL_FUNC"], value=value)
         return node
@@ -243,22 +212,23 @@ class Parser:
                 # function call
                 return self._call_function()
             else:
-                # assign variable
+                # TODO: assign variable
                 raise NotImplementedError
         elif token["type"] == TOKEN_TYPES["SYMBOL"]:
             pass
         elif token["type"] == TOKEN_TYPES["EOF"]:
             pass
         else:
+            # Undefined state
             raise NotImplementedError
 
     def run(self):
         token = self.lexer.get_token()
-        node = Node()
+        root_node = Node()
         while token["type"] != TOKEN_TYPES["EOF"]:
-            self.state_handler(token, node)
+            self.state_handler(token, root_node)
             token = self.lexer.get_token()
-        return node
+        return self.symbol_table
 
     def show(self):
         token = self.lexer.get_token()
@@ -267,18 +237,18 @@ class Parser:
             print(self.lexer.token)
 
 
-class Assembler:
+class Compiler:
     """
     section .text
     global _start
 
-    my_printf:
+    printf:
             push ebp
             mov ebp, esp
             mov eax, 4
             mov ebx,1
             mov ecx, [ebp+8]
-            mov edx,size
+            mov edx, string1_size
             int 0x80
             leave
             ret
@@ -294,15 +264,14 @@ class Assembler:
     string1    db      'Hello World'
     string1_size    equ     $-string
 
-; nasm -f elf printf.s && ld -melf_i386 printf.o -o printf
-
+    ; nasm -f elf printf.s && ld -melf_i386 printf.o -o printf
     """
 
-    def __init__(self, ast):
-        self.ast = ast
+    def __init__(self, symbol_table):
+        self.symbol_table = symbol_table
         self.prologue = "push ebp\nmov ebp, esp"
-        self.epilogue = "leave\nlet"
-        self.text_section = 'section .text\n'
+        self.epilogue = "leave\nret\n"
+        self.text_section = 'section .text\nglobal %s' % ORIGINAL_ENTRY_POINT
         self.data_section = 'section .data\n'
 
     def make_assembly(self, node, is_assembly=False):
@@ -315,17 +284,18 @@ class Assembler:
                 for arg in args:
                     if isinstance(arg, str):
                         identifier = self.alloc_string(arg)
-                    args[args.index(arg)] = identifier
+                        args[args.index(arg)] = identifier
                 push_args = '\n'.join(map(lambda a: 'push %s' % a, args))
                 call_func = "call %s\nadd esp, %d" % (func_name, len(args) * 4)
                 return '\n%s:\n%s\n%s\n' % (ORIGINAL_ENTRY_POINT, push_args, call_func)
             else:
+                # TODO: Compile operation code ex) 1+2*3
                 raise NotImplementedError
 
     def alloc_string(self, string, identifier=None):
         if not identifier:
             identifier = 'string1'
-        self.data_section += '%s\t%s\t%s\n' % (identifier, 'db' if type == 'string' else '', string)
+        self.data_section += '%s\tdb\t%s\n' % (identifier, string)
         self.data_section += '%s_size\t%s\t$-%s\n' % (identifier, 'equ', identifier)
         return identifier
 
@@ -336,23 +306,36 @@ class Assembler:
             self.text_section += self.make_assembly(node)
         else:
             is_assembly = symbol["node"].state == STATE_TYPES["INLINE_ASSEMBLY"]
-            self.text_section += "\n%s:\n%s\n%s\n%s" % (name, self.prologue, self.make_assembly(node, is_assembly=is_assembly), self.epilogue)
+            self.text_section += "\n\n%s:\n%s%s\n%s" % (
+                name, self.prologue, self.make_assembly(node, is_assembly=is_assembly), self.epilogue)
 
     def run(self):
-        for symbol in SYMBOL_TABLES:
+        for symbol in self.symbol_table:
             if symbol["isFunc"]:
                 self.alloc_func(symbol)
             else:
-                self.alloc_string(symbol)
-        self.text_section += "\n\nexit:\nmov eax, 1\nint 0x80\n"
+                # TODO: Alloc global variable
+                raise NotImplementedError
+        self.text_section += "\nexit:\nmov eax, 1\nint 0x80\n"
         asm = "%s\n%s" % (self.text_section, self.data_section)
         return asm
 
 
-if __name__ == "__main__":
-    parser = Parser("./helloworld.c")
-    ast = parser.run()
-    assembler = Assembler(ast)
-    asm = assembler.run()
-    with open("helloworld.s", "w") as fp:
+def main(c_file):
+    parser = Parser(c_file)
+    symbol_table = parser.run()
+
+    compiler = Compiler(symbol_table)
+    asm = compiler.run()
+    with open("%s.s" % c_file[:c_file.find(".c")], "w") as fp:
         fp.write(asm)
+
+
+if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) < 2:
+        c_file = "./helloworld.c"
+    else:
+        c_file = sys.argv[1]
+    main(c_file)
