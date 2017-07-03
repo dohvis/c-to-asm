@@ -258,7 +258,9 @@ class Compiler:
             call my_printf
             add esp, 4
 
-    exit:   mov eax, 1
+    exit:
+            mov eax, 1
+            xor ebx, ebx
             int 0x80
     section .data
     string1    db      'Hello World'
@@ -316,7 +318,7 @@ class Compiler:
             else:
                 # TODO: Alloc global variable
                 raise NotImplementedError
-        self.text_section += "\nexit:\nmov eax, 1\nint 0x80\n"
+        self.text_section += "\nexit:\nmov eax, 1\nxor ebx, ebx\nint 0x80\n"
         asm = "%s\n%s" % (self.text_section, self.data_section)
         return asm
 

@@ -19,6 +19,7 @@ add esp, 4
 
 exit:
 mov eax, 1
+xor ebx, ebx
 int 0x80
 
 section .data
