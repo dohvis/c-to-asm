@@ -8,20 +8,24 @@ WHITESPACE = (" ", "\t", "\n")
 SYMBOLS = ("(", ")", "{", "}", ",", ";")
 TOKEN_TYPES = {"EOF": 0, "IDENTIFIER": 1, "NUMBER": 2, "STRING": 3, "SYMBOL": 4, "VOID": 5}
 NULL = "\0"
-SYMBOL_TABLES = [
+STATE_TYPES = {"CALL_FUNC": 0, "DECLARE_FUNC": 1, "INLINE_ASSEMBLY": 2}
+
+_SYMBOL_TABLES = [
     {"type": "string", "isFunc": False, "identifier": "string1", "value": '"hello world"'},
     {"type": "void", "isFunc": True, "identifier": "main",
-     "value": {"func": "printf", "args": ["string1"]}
+     "node": None,
      },
     {"type": "void", "isFunc": True, "identifier": "printf",
      "value": "mov eax, 4\bmov ebx,1\nmov ecx, [ebp+8]\nmov edx,size\nint 0x80"}
 ]
+PRINTF_CODE = "mov eax, 4\nmov ebx,1\nmov ecx, [ebp+8]\nmov edx, %s_size\nint 0x80"
+SYMBOL_TABLES = []
 ORIGINAL_ENTRY_POINT = "_start"
 
 
 class Node:
-    def __init__(self, type=None, value=None):
-        self.type = type
+    def __init__(self, state=None, value=None):
+        self.state = state
         self.value = value
         self.parent = None
         self.children = []
@@ -166,38 +170,60 @@ class Parser:
     def expression(self):
         pass
 
-    def _declare_func(self, node):
-        func_type = copy(self.lexer.token)["value"]
-        func_name = copy(self.lexer.get_token())["value"]
-        func_node = Node(type=func_type, value=func_name)
+    def find(self, char):
+        while self.lexer.token["value"] != char:
+            self.lexer.get_token()
 
+    def _declare_func(self):
+        return_type = copy(self.lexer.token)["value"]
+        func_name = copy(self.lexer.get_token())["value"]
+        symbol = {"type": return_type, "isFunc": True, "identifier": func_name}
         token = self.lexer.get_token()  # consume('(')
+
+        args = []
         while token["value"] != "{":
+            # parse function's arguments
             token = self.lexer.get_token()
             if token["value"] in TYPES:
                 arg_type = token["value"]
             else:
                 break
             arg_identifier = copy(self.lexer.get_token()["value"])
-            arg_node = Node(type=arg_type, value=arg_identifier)
-            func_node.children.append(arg_node)
+            args.append((arg_type, arg_identifier))
             token = self.lexer.get_token()
+        symbol["args"] = args
+        node = Node()
+        self.find('{')
+        token = self.lexer.get_token()
         while token["value"] != "}":
-            self.state_handler(token, func_node)
+            _node = self.state_handler(token, node)
+            if _node is not None:
+                node.children.append(_node)
             token = self.lexer.get_token()
-        node.children.append(func_node)
+        symbol["node"] = node
+        SYMBOL_TABLES.append(symbol)
 
-    def _call_function(self, node):
-        func_name = copy(self.lexer.token)
+    def _call_function(self):
         args = []
+        function_name = self.lexer.token["value"]
+        if function_name == "printf":
+            printf_code = PRINTF_CODE % "string1"
+            node = Node(state=STATE_TYPES["INLINE_ASSEMBLY"], value={"code": printf_code})
+            symbol = {"type": "void", "isFunc": True, "identifier": "printf",
+                      "value": PRINTF_CODE, "node": node}
+            SYMBOL_TABLES.append(symbol)
+        self.find('(')
         token = self.lexer.get_token()
         while token["value"] != ")":
-            if token["type"] in (TOKEN_TYPES["NUMBER"], TOKEN_TYPES["STRING"]):
+            # parse function's arguments
+            if token["type"] == TOKEN_TYPES["STRING"]:
                 args.append(token["value"])
+            else:
+                raise NotImplementedError
             token = self.lexer.get_token()
-        func_node = Node(value=func_name)
-        func_node.children.append(Node(value=args))
-        node.children.append(func_node)
+        value = {"func_name": function_name, "args": args}
+        node = Node(state=STATE_TYPES["CALL_FUNC"], value=value)
+        return node
 
     def state_handler(self, token, node):
         """
@@ -206,10 +232,19 @@ class Parser:
         call_function = IDENTIFIER(expression);
         """
         if token["value"] in TYPES:
-            self._declare_func(node)
-            # TODO: declare_variable
+            if self.lexer.code[self.lexer.index + 2] == '=':
+                # TODO: declare_variable
+                raise NotImplementedError
+            else:
+                self._declare_func()
+
         elif token["type"] == TOKEN_TYPES["IDENTIFIER"]:
-            self._call_function(node)
+            if self.lexer.cursor_char == '(':
+                # function call
+                return self._call_function()
+            else:
+                # assign variable
+                raise NotImplementedError
         elif token["type"] == TOKEN_TYPES["SYMBOL"]:
             pass
         elif token["type"] == TOKEN_TYPES["EOF"]:
@@ -270,24 +305,38 @@ class Assembler:
         self.text_section = 'section .text\n'
         self.data_section = 'section .data\n'
 
-    def alloc_string(self, symbol):
-        name = symbol["identifier"]
-        type = symbol["type"]
-        value = symbol["value"]
-        self.data_section += '%s\t%s\t%s\n' % (name, 'db' if type == 'string' else '', value)
-        self.data_section += '%s_size\t%s\t$-%s\n' % (name, 'equ', name)
+    def make_assembly(self, node, is_assembly=False):
+        if is_assembly:
+            return "\n%s" % node.value["code"]
+        for child in node.children:
+            if child.state == STATE_TYPES["CALL_FUNC"]:
+                func_name = child.value["func_name"]
+                args = child.value["args"]
+                for arg in args:
+                    if isinstance(arg, str):
+                        identifier = self.alloc_string(arg)
+                    args[args.index(arg)] = identifier
+                push_args = '\n'.join(map(lambda a: 'push %s' % a, args))
+                call_func = "call %s\nadd esp, %d" % (func_name, len(args) * 4)
+                return '\n%s:\n%s\n%s\n' % (ORIGINAL_ENTRY_POINT, push_args, call_func)
+            else:
+                raise NotImplementedError
+
+    def alloc_string(self, string, identifier=None):
+        if not identifier:
+            identifier = 'string1'
+        self.data_section += '%s\t%s\t%s\n' % (identifier, 'db' if type == 'string' else '', string)
+        self.data_section += '%s_size\t%s\t$-%s\n' % (identifier, 'equ', identifier)
+        return identifier
 
     def alloc_func(self, symbol):
         name = symbol["identifier"]
-        value = symbol["value"]
+        node = symbol["node"]
         if name == "main":
-            callee = value["func"]
-            args = value["args"]
-            push_args = '\n'.join(map(lambda a: 'push %s' % a, args))
-            call_func = "call %s\nadd esp, %d" % (callee, len(args) * 4)
-            self.text_section += '\n%s:\n%s\n%s\n' % (ORIGINAL_ENTRY_POINT, push_args, call_func)
+            self.text_section += self.make_assembly(node)
         else:
-            self.text_section += "\n%s:\n%s\n%s\n%s" % (name, self.prologue, value, self.epilogue)
+            is_assembly = symbol["node"].state == STATE_TYPES["INLINE_ASSEMBLY"]
+            self.text_section += "\n%s:\n%s\n%s\n%s" % (name, self.prologue, self.make_assembly(node, is_assembly=is_assembly), self.epilogue)
 
     def run(self):
         for symbol in SYMBOL_TABLES:
@@ -302,11 +351,7 @@ class Assembler:
 
 if __name__ == "__main__":
     parser = Parser("./helloworld.c")
-    # parser.show()
     ast = parser.run()
-    from pprint import pprint
-
-    pprint(ast)
     assembler = Assembler(ast)
     asm = assembler.run()
     with open("helloworld.s", "w") as fp:
