@@ -1,3 +1,7 @@
+dependencies:
+    pre:
+        - sudo apt-get update
+        - sudo apt-get install gcc gcc-multilib g++-multilib nasm
 test:
     override:
         - python c2asm.py helloworld.c
