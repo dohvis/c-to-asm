@@ -10,6 +10,7 @@ from symbols import (
     STATE_TYPES,
     ORIGINAL_ENTRY_POINT,
     PRINTF_CODE,
+    RESERVED_WORDS,
 )
 
 
@@ -106,7 +107,10 @@ class Lexer:
             return self.token
         if char1 in VALID_CHARS:
             value = _get_identifier()
-            self.token["type"] = TOKEN_TYPES[value.upper()] if value in TYPES else TOKEN_TYPES["IDENTIFIER"]
+            if value in RESERVED_WORDS:
+                self.token["type"] = TOKEN_TYPES["RESERVED_WORDS"]
+            else:
+                self.token["type"] = TOKEN_TYPES[value] if value in TYPES else TOKEN_TYPES["IDENTIFIER"]
             self.token["value"] = value
         elif char1 in VALID_NUMBERS:
             self.token["value"] = _get_number()
@@ -194,6 +198,13 @@ class Parser:
         node = Node(state=STATE_TYPES["CALL_FUNC"], value=value)
         return node
 
+    def _return_function(self):
+        return_value = self.lexer.get_token()
+        if return_value["type"] == TOKEN_TYPES["NUMBER"]:
+            return Node(state=STATE_TYPES["RETURN_FUNC"], value=return_value["value"])
+        else:
+            raise NotImplementedError
+
     def state_handler(self, token, node):
         """
         statement = declare_function | call_function
@@ -214,6 +225,9 @@ class Parser:
             else:
                 # TODO: assign variable
                 raise NotImplementedError
+        elif token["type"] == TOKEN_TYPES["RESERVED_WORDS"]:
+            if token["value"] == "return":
+                return self._return_function()
         elif token["type"] == TOKEN_TYPES["SYMBOL"]:
             pass
         elif token["type"] == TOKEN_TYPES["EOF"]:
@@ -226,6 +240,7 @@ class Parser:
         token = self.lexer.get_token()
         root_node = Node()
         while token["type"] != TOKEN_TYPES["EOF"]:
+            print(token["value"])
             self.state_handler(token, root_node)
             token = self.lexer.get_token()
         return self.symbol_table
@@ -273,12 +288,13 @@ class Compiler:
         self.symbol_table = symbol_table
         self.prologue = "push ebp\nmov ebp, esp"
         self.epilogue = "leave\nret\n"
-        self.text_section = 'section .text\nglobal %s' % ORIGINAL_ENTRY_POINT
+        self.text_section = 'section .text\nglobal %s\n' % ORIGINAL_ENTRY_POINT
         self.data_section = 'section .data\n'
 
     def make_assembly(self, node, is_assembly=False):
         if is_assembly:
             return "\n%s" % node.value["code"]
+        asm = ''
         for child in node.children:
             if child.state == STATE_TYPES["CALL_FUNC"]:
                 func_name = child.value["func_name"]
@@ -289,36 +305,37 @@ class Compiler:
                         args[args.index(arg)] = identifier
                 push_args = '\n'.join(map(lambda a: 'push %s' % a, args))
                 call_func = "call %s\nadd esp, %d" % (func_name, len(args) * 4)
-                return '\n%s:\n%s\n%s\n' % (ORIGINAL_ENTRY_POINT, push_args, call_func)
+                asm += '\n%s\n%s\n' % (push_args, call_func)
+            elif child.state == STATE_TYPES["RETURN_FUNC"]:
+                return_value = child.value
+                asm += "mov eax, %s" % return_value
             else:
                 # TODO: Compile operation code ex) 1+2*3
                 raise NotImplementedError
+        return asm
 
     def alloc_string(self, string, identifier=None):
         if not identifier:
             identifier = 'string1'
         self.data_section += '%s\tdb\t%s\n' % (identifier, string)
-        self.data_section += '%s_size\t%s\t$-%s\n' % (identifier, 'equ', identifier)
+        # self.data_section += '%s_size\t%s\t$-%s\n' % (identifier, 'equ', identifier)
         return identifier
 
     def alloc_func(self, symbol):
         name = symbol["identifier"]
         node = symbol["node"]
-        if name == "main":
-            self.text_section += self.make_assembly(node)
-        else:
-            is_assembly = symbol["node"].state == STATE_TYPES["INLINE_ASSEMBLY"]
-            self.text_section += "\n\n%s:\n%s%s\n%s" % (
-                name, self.prologue, self.make_assembly(node, is_assembly=is_assembly), self.epilogue)
+        is_assembly = symbol["node"].state == STATE_TYPES["INLINE_ASSEMBLY"]
+        return "\n\n%s:\n%s%s\n%s" % (
+            name, self.prologue, self.make_assembly(node, is_assembly=is_assembly), self.epilogue)
 
     def run(self):
         for symbol in self.symbol_table:
             if symbol["isFunc"]:
-                self.alloc_func(symbol)
+                self.text_section += self.alloc_func(symbol)
             else:
                 # TODO: Alloc global variable
                 raise NotImplementedError
-        self.text_section += "\nexit:\nmov eax, 1\nxor ebx, ebx\nint 0x80\n"
+        self.text_section += "\n_start:\njmp main\nmov ebx, eax\nmov eax, 1\nint 0x80\n"
         asm = "%s\n%s" % (self.text_section, self.data_section)
         return asm
 

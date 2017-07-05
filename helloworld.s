@@ -1,6 +1,7 @@
 section .text
 global _start
 
+
 printf:
 push ebp
 mov ebp, esp
@@ -12,16 +13,22 @@ int 0x80
 leave
 ret
 
-_start:
+
+main:
+push ebp
+mov ebp, esp
 push string1
 call printf
 add esp, 4
+mov eax, 0
+leave
+ret
 
-exit:
+_start:
+jmp main
+mov ebx, eax
 mov eax, 1
-xor ebx, ebx
 int 0x80
 
 section .data
 string1	db	"Hello world"
-string1_size	equ	$-string1

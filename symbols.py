@@ -1,11 +1,12 @@
 DOUBLE_QUOTE = '"'  # string identifier
-TYPES = ("void", "string")
+TYPES = ("void", "string", "int")
 VALID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrustuvwxyz_"
 VALID_NUMBERS = "0123456789."
 WHITESPACE = (" ", "\t", "\n")
 SYMBOLS = ("(", ")", "{", "}", ",", ";")
-TOKEN_TYPES = {"EOF": 0, "IDENTIFIER": 1, "NUMBER": 2, "STRING": 3, "SYMBOL": 4, "VOID": 5}
+TOKEN_TYPES = {"EOF": 0, "IDENTIFIER": 1, "NUMBER": 2, "STRING": 3, "SYMBOL": 4, "RESERVED_WORDS": 5}
 NULL = "\0"
-STATE_TYPES = {"CALL_FUNC": 0, "DECLARE_FUNC": 1, "INLINE_ASSEMBLY": 2}
+STATE_TYPES = {"CALL_FUNC": 0, "DECLARE_FUNC": 1, "INLINE_ASSEMBLY": 2, "RETURN_FUNC": 3}
 PRINTF_CODE = "mov eax, 4\nmov ebx,1\nmov ecx, [ebp+8]\nmov edx, %d\nint 0x80"
 ORIGINAL_ENTRY_POINT = "_start"
+RESERVED_WORDS = ("return", )+TYPES
