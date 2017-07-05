@@ -190,7 +190,7 @@ class Parser:
             token = self.lexer.get_token()
 
         if function_name == "printf":
-            strlen = len(args[0])
+            strlen = len(args[0].strip('"'))
             node = Node(state=STATE_TYPES["INLINE_ASSEMBLY"], value={"code": PRINTF_CODE % strlen})
             symbol = {"type": "void", "isFunc": True, "identifier": "printf", "node": node}
             self.symbol_table.append(symbol)
@@ -335,7 +335,7 @@ class Compiler:
             else:
                 # TODO: Alloc global variable
                 raise NotImplementedError
-        self.text_section += "\n_start:\njmp main\nmov ebx, eax\nmov eax, 1\nint 0x80\n"
+        self.text_section += "\n_start:\ncall main\nmov ebx, eax\nmov eax, 1\nint 0x80\n"
         asm = "%s\n%s" % (self.text_section, self.data_section)
         return asm
 
