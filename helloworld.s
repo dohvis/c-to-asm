@@ -8,7 +8,7 @@ mov ebp, esp
 mov eax, 4
 mov ebx,1
 mov ecx, [ebp+8]
-mov edx, 13
+mov edx, %d
 int 0x80
 leave
 ret
@@ -25,7 +25,7 @@ leave
 ret
 
 _start:
-jmp main
+call main
 mov ebx, eax
 mov eax, 1
 int 0x80

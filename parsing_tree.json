@@ -1,0 +1,39 @@
+[
+  {
+    "node_type": "Declare function",
+    "options": {
+      "func_name": "main",
+      "return_type": "int"
+    },
+    "child_nodes": [
+      {
+        "node_type": "call function",
+        "options": {
+          "func_name": "printf"
+        },
+        "child_nodes": [
+          {
+            "node_type": "String value",
+            "options": {
+              "value": "\"Hello world\""
+            },
+            "child_nodes": []
+          }
+        ]
+      },
+      {
+        "node_type": "return function",
+        "options": {},
+        "child_nodes": [
+          {
+            "node_type": "Number value",
+            "options": {
+              "value": "0"
+            },
+            "child_nodes": []
+          }
+        ]
+      }
+    ]
+  }
+]

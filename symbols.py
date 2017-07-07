@@ -6,7 +6,15 @@ WHITESPACE = (" ", "\t", "\n")
 SYMBOLS = ("(", ")", "{", "}", ",", ";")
 TOKEN_TYPES = {"EOF": 0, "IDENTIFIER": 1, "NUMBER": 2, "STRING": 3, "SYMBOL": 4, "RESERVED_WORDS": 5}
 NULL = "\0"
-STATE_TYPES = {"CALL_FUNC": 0, "DECLARE_FUNC": 1, "INLINE_ASSEMBLY": 2, "RETURN_FUNC": 3}
-PRINTF_CODE = "mov eax, 4\nmov ebx,1\nmov ecx, [ebp+8]\nmov edx, %d\nint 0x80"
+PRINTF_CODE = "\nmov eax, 4\nmov ebx,1\nmov ecx, [ebp+8]\nmov edx, %d\nint 0x80"
 ORIGINAL_ENTRY_POINT = "_start"
-RESERVED_WORDS = ("return", )+TYPES
+RESERVED_WORDS = ("return",) + TYPES
+
+## NODE TYPES
+CALL_FUNC = "call function"
+DECLARE_FUNC = "Declare function"
+INLINE_ASSEMBLY = "INLINE_ASSEMBLY"
+RETURN_FUNC = "return function"
+STRING_VALUE = "String value"
+NUMBER_VALUE = "Number value"
+INLINE_ASSEMBLY = "Inline assembly"
